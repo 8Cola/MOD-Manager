@@ -833,6 +833,10 @@ fn setup() -> (tempfile::TempDir, Service, String, PathBuf) {
     let temp = tempdir().unwrap();
     let root = temp.path().join("mods");
     fs::create_dir(&root).unwrap();
+    // Windows hosted runners may expose TEMP through an 8.3 alias (RUNNER~1).
+    // Fixtures that construct recovery records must use the same canonical
+    // spelling as saveGame, just like records produced by the application.
+    let root = fs::canonicalize(root).unwrap();
     let mut s = Service::new(temp.path().join("data")).unwrap();
     let out = s
         .request(
