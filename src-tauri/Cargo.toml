@@ -1,0 +1,35 @@
+[package]
+name = "mod-manager"
+version = "1.0.0"
+description = "A local, safe Windows game mod manager"
+edition = "2021"
+
+[lib]
+name = "mod_manager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.22"
+notify = "8"
+sysinfo = "0.37"
+fs2 = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61.3", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

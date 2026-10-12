@@ -1,0 +1,33 @@
+.image-cropper-overlay { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; padding:24px; background:#10171499; backdrop-filter:blur(8px); animation:image-cropper-enter .16s ease; }
+.image-cropper-dialog { width:460px; max-width:100%; max-height:calc(100dvh - 48px); overflow:auto; background:var(--surface); color:var(--text); border:1px solid var(--line); border-radius:20px; padding:25px; box-shadow:var(--shadow); scrollbar-width:thin; }
+.image-cropper-dialog:focus { outline:none; }
+.image-cropper-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.image-cropper-heading h2 { font-size:21px; margin:10px 0 0; letter-spacing:-.4px; font-weight:650; }
+.image-cropper-eyebrow { display:flex; align-items:center; gap:7px; color:var(--accent); font-size:11px; letter-spacing:1px; }
+.image-cropper-copy { margin:12px 0 20px; color:var(--muted); font-size:12px; line-height:1.8; }
+.image-cropper-stage { padding:20px 28px 15px; background:var(--base); border:1px solid var(--line); border-radius:13px; }
+.image-cropper-viewport { position:relative; width:100%; max-width:320px; margin:auto; aspect-ratio:1; overflow:hidden; background:var(--sidebar); cursor:grab; touch-action:none; user-select:none; border-radius:5px; box-shadow:0 0 0 1px var(--line),0 8px 24px #0000000a; }
+.image-cropper-viewport.is-dragging { cursor:grabbing; }
+.image-cropper-viewport:focus-visible { outline:2px solid var(--accent); outline-offset:5px; }
+.image-cropper-viewport img { position:absolute; display:block; max-width:none; transform:translate(-50%,-50%); pointer-events:none; object-fit:fill; }
+.image-cropper-grid { position:absolute; inset:0; pointer-events:none; background:linear-gradient(to right,transparent calc(33.333% - .5px),#ffffff60 33.333%,transparent calc(33.333% + .5px),transparent calc(66.667% - .5px),#ffffff60 66.667%,transparent calc(66.667% + .5px)),linear-gradient(to bottom,transparent calc(33.333% - .5px),#ffffff60 33.333%,transparent calc(33.333% + .5px),transparent calc(66.667% - .5px),#ffffff60 66.667%,transparent calc(66.667% + .5px)); opacity:.5; }
+.image-cropper-corner { position:absolute; width:18px; height:18px; border-color:#fff; border-style:solid; border-width:0; pointer-events:none; filter:drop-shadow(0 1px 2px #0005); }
+.image-cropper-corner.top-left { top:8px; left:8px; border-top-width:2px; border-left-width:2px; }
+.image-cropper-corner.top-right { top:8px; right:8px; border-top-width:2px; border-right-width:2px; }
+.image-cropper-corner.bottom-left { bottom:8px; left:8px; border-bottom-width:2px; border-left-width:2px; }
+.image-cropper-corner.bottom-right { bottom:8px; right:8px; border-bottom-width:2px; border-right-width:2px; }
+.image-cropper-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }
+.image-cropper-size { display:block; color:var(--muted); font-size:10px; letter-spacing:1.5px; text-align:center; margin:13px 0 0; }
+.image-cropper-zoom-heading { display:flex; justify-content:space-between; margin:20px 0 8px; font-size:12px; color:var(--soft); }
+.image-cropper-zoom-heading output { color:var(--muted); font-variant-numeric:tabular-nums; }
+.image-cropper-zoom { display:flex; align-items:center; gap:12px; }
+.image-cropper-zoom input[type="range"] { min-width:0; flex:1; width:auto; accent-color:var(--accent); cursor:pointer; height:22px; padding:0; border:0; background:none; }
+.image-cropper-assist { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--muted); margin:9px 0 0; }
+.image-cropper-assist button { font-size:11px; padding:5px 0 5px 8px; color:var(--soft); }
+.image-cropper-assist button:hover { color:var(--accent); }
+.image-cropper-error { margin:14px 0 0; padding:10px 12px; border-radius:8px; background:var(--danger-bg); color:var(--danger); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.image-cropper-actions { margin-top:20px; padding-top:18px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:10px; }
+.image-cropper-actions button { min-width:92px; }
+@keyframes image-cropper-enter { from { opacity:0; } to { opacity:1; } }
+@media (max-height:700px) { .image-cropper-dialog { padding:20px; } .image-cropper-stage { padding:12px 28px 10px; } .image-cropper-viewport { max-width:260px; } .image-cropper-copy { margin-bottom:14px; } .image-cropper-zoom-heading { margin-top:14px; } }
+@media (prefers-reduced-motion:reduce) { .image-cropper-overlay { animation:none; } .image-cropper-dialog button { transition:none; } }

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MOD Manager",
+  "version": "1.0.0",
+  "identifier": "com.modmanager.desktop",
+  "build": {"beforeDevCommand":"npm run dev","devUrl":"http://127.0.0.1:1420","beforeBuildCommand":"npm run build","frontendDist":"../dist"},
+  "app": {
+    "windows": [{"label":"main","create":false,"title":"MOD Manager","width":1240,"height":820,"minWidth":860,"minHeight":600,"decorations":false,"dragDropEnabled":true,"backgroundColor":"#fcfdff"}],
+    "security": {"csp":"default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; script-src 'self'", "assetProtocol":{"enable":true,"scope":["$APPDATA/com.modmanager.desktop/images/**","$LOCALDATA/com.modmanager.desktop/images/**"]}}
+  },
+  "bundle": {"active":false,"targets":["nsis"],"shortDescription":"本地游戏 Mod 管理器","category":"Utility","icon":["icons/icon.ico","icons/icon.png"],"windows":{"nsis":{"displayLanguageSelector":true,"languages":["SimpChinese","English"],"installMode":"currentUser"},"webviewInstallMode":{"type":"downloadBootstrapper"}}}
+}
