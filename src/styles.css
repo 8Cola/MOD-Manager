@@ -20,4 +20,3 @@
 .game-info small { letter-spacing:-.2px; }
 @media (max-width:1000px) { .main-content { padding-left:26px; padding-right:26px; } .row-end { gap:10px; } .state-label { font-size:12px; } .folder-link span { max-width:320px; } .welcome h1 { font-size:27px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
-

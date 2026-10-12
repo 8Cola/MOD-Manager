@@ -127,7 +127,7 @@ async function shot(name) {await page.screenshot({path:path.join(output,name+'.p
     await page.getByLabel('选择 Lighting.pak',{exact:true}).check();
     await page.getByRole('button',{name:'创建分组',exact:true}).click();
     const dialog=page.getByRole('dialog',{name:'创建逻辑 Mod'});
-    
+
     await dialog.getByLabel('备注',{exact:true}).fill('手动分组');
     await dialog.getByRole('button',{name:'创建分组',exact:true}).click();
     await dialog.waitFor({state:'hidden'});

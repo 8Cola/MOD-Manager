@@ -111,4 +111,3 @@ body { overflow:hidden; } button { transition:background 160ms var(--ease),color
 /* Shared master artwork also supplies the executable icon. */
 .brand-mark { background:transparent; }
 .brand-mark img { display:block; width:100%; height:100%; }
-

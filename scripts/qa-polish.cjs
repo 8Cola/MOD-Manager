@@ -53,5 +53,3 @@ const row=name=>page.locator('.mod-row').filter({has:page.locator('.mod-name-tex
  await stop();await start();await row('folder-mod').waitFor();assert.match(await page.locator('.game-info small').innerText(),/共 28 个 Mod/);checks.push('Directory switching scopes current counts correctly; native restart retains files and library');
  await fs.writeFile(path.join(root,'_local/output/polish-native-qa.json'),JSON.stringify({passed:true,checks,fixture},null,2));console.log(JSON.stringify({passed:true,checks,fixture},null,2));await stop();
 })().catch(async e=>{console.error(e);if(page)await page.screenshot({path:path.join(root,'_local/output/playwright/polish-failure.png')}).catch(()=>{});await stop().catch(()=>{});process.exitCode=1;});
-
-

@@ -15,9 +15,13 @@ candidates = [root / '_local' / 'target' / 'release' / 'mod-manager.exe',
 existing = [p for p in candidates if p.is_file()]
 if not existing:
     raise SystemExit('Missing Release executable; build the project first')
-artifacts = {max(existing, key=lambda p: p.stat().st_mtime): release / 'MOD Manager.exe'}
+artifacts = {
+    max(existing, key=lambda p: p.stat().st_mtime): release / 'MOD Manager.exe',
+    root / 'LICENSE': release / 'LICENSE',
+    root / 'THIRD_PARTY_NOTICES.md': release / 'THIRD_PARTY_NOTICES.md',
+}
 for source, destination in artifacts.items():
-    if not source.is_file() or source.stat().st_size < 1024:
+    if not source.is_file() or source.stat().st_size == 0:
         raise SystemExit(f'Missing build artifact: {source}')
     try:
         shutil.copy2(source, destination)

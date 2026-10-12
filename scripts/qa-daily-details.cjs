@@ -32,5 +32,3 @@ async function choose(name){await page.getByLabel('当前 MOD 目录').click();a
  await page.evaluate(()=>document.documentElement.style.zoom='1');checks.push('160 Mods render in both themes at 100/125/150 percent WebView zoom without horizontal overflow');
  await fs.writeFile(path.join(root,'_local/output/daily-details-native-qa.json'),JSON.stringify({passed:true,checks,metrics,fixture},null,2));console.log(JSON.stringify({passed:true,checks,metrics,fixture},null,2));await stop();
 })().catch(async e=>{console.error(e);if(page)await page.screenshot({path:path.join(root,'_local/output/playwright/daily-failure.png')}).catch(()=>{});await stop().catch(()=>{});process.exitCode=1});
-
-

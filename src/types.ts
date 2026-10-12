@@ -13,5 +13,3 @@ export const modName = (mod: Mod) => basename(mod.members[0]?.currentPath || mod
 export const memberSummary = (mod: Mod) => mod.members.length > 1 ? `${mod.members.length} 个成员` : mod.members[0]?.kind === 'directory' ? '文件夹' : '文件';
 export interface ViewPreferences { gameId?: string; folderChoices?: Record<string,string>; scrolls?: Record<string,number> }
 export interface RecentDeletion { id:string; name:string; status:string; at:string; gameId:string; folderId:string }
-
-

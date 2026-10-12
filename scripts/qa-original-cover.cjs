@@ -26,5 +26,3 @@ async function addInterruptedRecord(mods){const id=require('node:crypto').random
  await page.getByLabel('描述与备注',{exact:true}).fill('unsaved draft');await page.getByLabel('移除 MOD 图片').click();await eventually(async()=>!(await current()).imagePath,'removed');assert.equal((await current()).originalImagePath,null);assert.equal((await current()).description,'');assert.equal(await page.getByLabel('描述与备注',{exact:true}).inputValue(),'unsaved draft');checks.push('Remove clears both image associations and leaves note draft unsaved');
  await fs.writeFile(path.join(root,'_local/output/original-cover-qa.json'),JSON.stringify({passed:true,checks,fixture},null,2));console.log(JSON.stringify({passed:true,checks},null,2));await stop();
 })().catch(async error=>{console.error(error);if(page)await page.screenshot({path:path.join(root,'_local/output/playwright/original-cover-failure.png')}).catch(()=>{});await stop().catch(()=>{});process.exitCode=1});
-
-
