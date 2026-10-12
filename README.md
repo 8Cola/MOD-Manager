@@ -8,6 +8,20 @@
 
 ![MOD Manager 界面](docs/images/overview.png)
 
+## 界面截图
+
+### MOD 列表
+
+![MOD 列表、封面与备注](docs/images/mod-list.png)
+
+### 游戏编辑
+
+![游戏名称、MOD 目录与游戏图片设置](docs/images/game-editor.png)
+
+### 设置页面
+
+![外观、数据备份与最近删除](docs/images/settings.png)
+
 ## 功能
 
 - 一个游戏可配置多个目录，并为目录设置备注名，例如普通 MOD、玩法 MOD、光影和材质包。
