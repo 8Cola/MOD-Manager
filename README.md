@@ -1,10 +1,14 @@
-# MOD Manager
+<p align="center"><img src="src/assets/app-icon.svg" width="96" height="96" alt="MOD Manager 玻璃游戏方块标志" /></p>
+
+# MOD Manager 2.0
 
 一款简洁的 Windows 本地游戏 MOD 管理器。集中管理多个游戏、多个 MOD 目录，让启停、备注和封面整理更方便。
 
 **完全本地运行 · 无需登录 · Windows 10 / 11 x64 · MIT 开源**
 
 [下载 Windows 程序](https://github.com/8Cola/MOD-Manager/releases/latest) · [报告问题](https://github.com/8Cola/MOD-Manager/issues) · [参与开发](CONTRIBUTING.md)
+
+2.0 更新了正式标志，修复深色启动闪白，优化主题切换、后台核对和大量 MOD 的搜索与列表响应。完整内容见 [更新记录](CHANGELOG.md)。
 
 ![MOD Manager 界面](docs/images/overview.png)
 
@@ -34,7 +38,7 @@
 
 ## 下载与使用
 
-在 [Releases](https://github.com/8Cola/MOD-Manager/releases) 下载 `MOD Manager.exe`，双击运行，无需安装本软件。需要 Windows 10 / 11 x64 和 Microsoft Edge WebView2 运行环境；EXE 内嵌前端资源，不需旁置网页或 DLL。
+在 [Releases](https://github.com/8Cola/MOD-Manager/releases) 下载 `MOD-Manager.exe`，双击运行，无需安装本软件。需要 Windows 10 / 11 x64 和 Microsoft Edge WebView2 运行环境；EXE 内嵌前端资源，不需旁置网页或 DLL。
 
 1. 添加游戏，选择游戏实际加载 MOD 的目录。可添加多个目录及备注名。
 2. 在目录下拉框切换当前管理的内容。新文件会被扫描识别；不明确的项目需要在详情中确认纳入管理。
@@ -79,8 +83,11 @@ Release EXE 位于 `src-tauri/target/release/mod-manager.exe`。当前配置生�
 - [启停性能与测试结果](docs/TOGGLE-PERFORMANCE.md)
 - [封面与原图](docs/ORIGINAL-COVER.md)
 - [手动保存备注](docs/MANUAL-NOTES.md)
+- [日常操作性能优化](docs/PERFORMANCE.md)
+- [启动主题修复](docs/STARTUP-THEME.md)
+- [正式标志与生成方式](docs/BRANDING.md)
 
-本地 Windows 回归包含 96 项通过测试，以及真实 WebView 文件操作验收。结果针对测试环境，不代表所有游戏或 Windows 环境均已验证。Windows Release 未进行代码签名。
+2.0 本地 Windows 回归包含 100 项通过测试，以及真实 WebView 的 1,000 文件、手动保存、封面和主题验收。结果针对测试环境，不代表所有游戏或 Windows 环境均已验证。Windows Release 未进行代码签名。
 
 ## 开源许可
 

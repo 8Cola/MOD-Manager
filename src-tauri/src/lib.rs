@@ -17,10 +17,41 @@ use std::{
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
+    startup_ready: Arc<AtomicBool>,
     service: Arc<Mutex<core::Service>>,
     monitor: Arc<Mutex<monitoring::MonitorStatus>>,
     imports: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     _instance_lock: File,
+}
+
+#[tauri::command]
+fn sync_theme(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    theme: String,
+    dark: bool,
+    ready: bool,
+) -> Result<(), String> {
+    let native = match theme.as_str() {
+        "dark" => Some(tauri::Theme::Dark),
+        "light" => Some(tauri::Theme::Light),
+        "system" => None,
+        _ => return Err("外观设置无效".into()),
+    };
+    window.set_theme(native).map_err(|e| e.to_string())?;
+    let color = if dark {
+        tauri::window::Color(23, 29, 40, 255)
+    } else {
+        tauri::window::Color(252, 253, 255, 255)
+    };
+    window
+        .set_background_color(Some(color))
+        .map_err(|e| e.to_string())?;
+    if ready && !state.startup_ready.load(Ordering::Acquire) {
+        window.show().map_err(|e| e.to_string())?;
+        state.startup_ready.store(true, Ordering::Release);
+    }
+    Ok(())
 }
 
 struct ImportRegistration {
@@ -151,30 +182,11 @@ async fn request(
             return Ok(json!({"success":true}));
         }
         if action == "openFolder" {
-            let snapshot = service.request(json!({"action":"snapshot"}))?;
-            let folder = if let Some(id) = request.get("gameId").and_then(Value::as_str) {
-                snapshot["games"]
-                    .as_array()
-                    .and_then(|games| games.iter().find(|g| g["id"].as_str() == Some(id)))
-                    .and_then(|g| {
-                        if let Some(folder_id) = request.get("folderId").and_then(Value::as_str) {
-                            g["folders"]
-                                .as_array()?
-                                .iter()
-                                .find(|f| f["id"].as_str() == Some(folder_id))?["path"]
-                                .as_str()
-                        } else {
-                            g["modDir"].as_str()
-                        }
-                    })
-                    .ok_or("未找到游戏目录")?
-            } else {
-                snapshot["dataDir"].as_str().ok_or("未找到数据目录")?
-            };
-            let path = PathBuf::from(folder);
-            if !path.is_dir() {
-                return Err("目录不存在，请检查路径或磁盘连接".into());
-            }
+            let path = service.folder_path(
+                request.get("gameId").and_then(Value::as_str),
+                request.get("folderId").and_then(Value::as_str),
+            )?;
+            drop(service);
             std::process::Command::new("explorer.exe")
                 .arg(path)
                 .spawn()
@@ -184,7 +196,10 @@ async fn request(
         let mut result = service.request_with_progress(request.clone(), |progress| {
             let _ = app.emit("toggle-progress", progress);
         })?;
-        if result.get("games").is_some() {
+        if result.get("games").is_some()
+            || result.get("mods").is_some()
+            || result["unchanged"] == true
+        {
             if let Ok(status) = monitor.lock() {
                 result["monitoring"] = json!(status.label);
                 if let Some(warnings) = result["warnings"].as_array_mut() {
@@ -193,10 +208,15 @@ async fn request(
             }
         }
         if action != "snapshot"
+            && action != "viewSnapshot"
             && action != "toggle"
             && action != "export"
             && action != "previewImage"
+            && action != "saveCrop"
             && action != "saveView"
+            && request.get("quiet").and_then(Value::as_bool) != Some(true)
+            && !(action == "settings"
+                && request.get("compact").and_then(Value::as_bool) == Some(true))
         {
             let _ = app.emit("library-changed", ());
         }
@@ -226,19 +246,24 @@ pub fn run() {
                 .open(data_dir.join("instance.lock"))?;
             lock.try_lock_exclusive()
                 .map_err(|_| "MOD Manager 已经运行，请返回已打开的窗口")?;
-            let service = Arc::new(Mutex::new(
-                core::Service::new(data_dir.clone()).map_err(std::io::Error::other)?,
-            ));
+            let service = core::Service::new(data_dir.clone()).map_err(std::io::Error::other)?;
+            let preference=service.theme_preference().to_string();
+            let service = Arc::new(Mutex::new(service));
+            let startup_ready=Arc::new(AtomicBool::new(false));
             let monitor = Arc::new(Mutex::new(monitoring::MonitorStatus::default()));
             monitoring::start(app.handle().clone(), service.clone(), monitor.clone());
             app.manage(AppState {
+                startup_ready:startup_ready.clone(),
                 service,
                 monitor,
                 imports: Arc::new(Mutex::new(HashMap::new())),
                 _instance_lock: lock,
             });
-            let window =
-                tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?;
+            let native_theme=match preference.as_str(){"dark"=>Some(tauri::Theme::Dark),"light"=>Some(tauri::Theme::Light),_=>None};
+            let background=if preference=="dark" {tauri::window::Color(23,29,40,255)} else {tauri::window::Color(252,253,255,255)};
+            let initialization=include_str!("startup-theme.js").replace("__THEME_PREFERENCE__",&serde_json::to_string(&preference)?);
+            let window = tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
+                .visible(false).theme(native_theme).background_color(background).initialization_script(initialization);
             #[cfg(debug_assertions)]
             let window = if std::env::var_os("MM_TEST_DATA_DIR").is_some() {
                 window
@@ -248,9 +273,23 @@ pub fn run() {
                 window
             };
             window.build()?;
+            // A failed page/module must not leave an invisible, locked instance.
+            let handle=app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(30));
+                if !startup_ready.load(Ordering::Acquire) {
+                    let exit_handle=handle.clone();
+                    let _=handle.run_on_main_thread(move || {
+                        if !startup_ready.load(Ordering::Acquire) {
+                            show_startup_error("界面加载未完成，请关闭程序后重试，并检查 WebView2 运行环境。\n管理器没有执行新的 MOD 启停操作。");
+                            exit_handle.exit(1);
+                        }
+                    });
+                }
+            });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![request])
+        .invoke_handler(tauri::generate_handler![request,sync_theme])
         .run(tauri::generate_context!());
     if let Err(error) = result {
         show_startup_error(&format!(

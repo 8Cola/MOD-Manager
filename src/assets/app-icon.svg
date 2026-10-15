@@ -1,1 +1,74 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="45" height="45" viewBox="0 0 45 45"><rect width="45" height="45" rx="13" fill="#3979f8"/><svg x="10" y="10" xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-gamepad2"><line x1="6" x2="10" y1="11" y2="11"></line><line x1="8" x2="8" y1="9" y2="13"></line><line x1="15" x2="15.01" y1="12" y2="12"></line><line x1="18" x2="18.01" y1="10" y2="10"></line><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"></path></svg></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" color-interpolation-filters="sRGB">
+  <title>MOD Manager — Glass Game Cube</title>
+  <desc>Code-drawn glass tile with an exploded pearlescent cube, directional pad and two inset buttons.</desc>
+  <defs>
+    <linearGradient id="tile" x1="185" y1="375" x2="947" y2="650" gradientUnits="userSpaceOnUse"><stop stop-color="#0052e9"/><stop offset=".48" stop-color="#0874fc"/><stop offset="1" stop-color="#58c4f5"/></linearGradient>
+    <radialGradient id="upper-light" cx="0" cy="0" r="1" gradientTransform="translate(823 50) rotate(112) scale(674 638)" gradientUnits="userSpaceOnUse"><stop stop-color="#c8fbff"/><stop offset=".38" stop-color="#6cd4ff" stop-opacity=".72"/><stop offset="1" stop-color="#147bff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="lower-light" cx="0" cy="0" r="1" gradientTransform="translate(954 927) rotate(-142) scale(675 570)" gradientUnits="userSpaceOnUse"><stop stop-color="#e0fcff"/><stop offset=".28" stop-color="#91e2ff"/><stop offset="1" stop-color="#40b4ff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="lower-left" cx="0" cy="0" r="1" gradientTransform="translate(166 978) rotate(-57) scale(420 500)" gradientUnits="userSpaceOnUse"><stop stop-color="#73d9ff"/><stop offset="1" stop-color="#0087ff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="blue-depth" cx="0" cy="0" r="1" gradientTransform="translate(346 483) rotate(79) scale(516 466)" gradientUnits="userSpaceOnUse"><stop stop-color="#002ba9" stop-opacity=".88"/><stop offset=".66" stop-color="#0037ce" stop-opacity=".47"/><stop offset="1" stop-color="#004bdf" stop-opacity="0"/></radialGradient>
+    <linearGradient id="rim" x1="835" y1="62" x2="203" y2="960" gradientUnits="userSpaceOnUse"><stop stop-color="#e6ffff" stop-opacity=".94"/><stop offset=".4" stop-color="#2caeff" stop-opacity=".1"/><stop offset=".81" stop-color="#4ad5ff" stop-opacity=".8"/><stop offset="1" stop-color="#dcffff"/></linearGradient>
+    <linearGradient id="core-left" x1="300" y1="370" x2="520" y2="677" gradientUnits="userSpaceOnUse"><stop stop-color="#0034bf"/><stop offset=".62" stop-color="#0066ff"/><stop offset="1" stop-color="#4cdaff"/></linearGradient>
+    <linearGradient id="core-right" x1="515" y1="522" x2="777" y2="506" gradientUnits="userSpaceOnUse"><stop stop-color="#0044e5"/><stop offset=".58" stop-color="#006cff"/><stop offset="1" stop-color="#7be9ff"/></linearGradient>
+    <linearGradient id="cap" x1="509" y1="172" x2="519" y2="431" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset=".29" stop-color="#e5f4ff"/><stop offset=".73" stop-color="#acd2fa"/><stop offset="1" stop-color="#cbf4ff"/></linearGradient>
+    <linearGradient id="cap-bevel" x1="285" y1="318" x2="749" y2="330" gradientUnits="userSpaceOnUse"><stop stop-color="#1378ff"/><stop offset=".5" stop-color="#88edff"/><stop offset="1" stop-color="#baf8ff"/></linearGradient>
+    <linearGradient id="left-glass" x1="13" y1="17" x2="308" y2="312" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset=".28" stop-color="#e4f0ff"/><stop offset=".75" stop-color="#9dc9fc"/><stop offset="1" stop-color="#94d9ff"/></linearGradient>
+    <linearGradient id="right-glass" x1="269" y1="18" x2="23" y2="313" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset=".4" stop-color="#e3f6ff"/><stop offset="1" stop-color="#98d7fa"/></linearGradient>
+    <linearGradient id="left-edge" x1="308" y1="0" x2="329" y2="90" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#c4f3ff"/></linearGradient>
+    <linearGradient id="right-edge" x1="0" y1="140" x2="26" y2="140" gradientUnits="userSpaceOnUse"><stop stop-color="#61cbfa"/><stop offset=".5" stop-color="#c4faff"/><stop offset="1" stop-color="#f6ffff"/></linearGradient>
+    <linearGradient id="cross-well" x1="128" y1="107" x2="219" y2="249" gradientUnits="userSpaceOnUse"><stop stop-color="#00229f"/><stop offset=".5" stop-color="#0046e9"/><stop offset="1" stop-color="#0084ff"/></linearGradient>
+    <linearGradient id="button-well" x1="95" y1="113" x2="228" y2="230" gradientUnits="userSpaceOnUse"><stop stop-color="#0032e5"/><stop offset=".65" stop-color="#006eff"/><stop offset="1" stop-color="#54daff"/></linearGradient>
+    <radialGradient id="face-light" cx="0" cy="0" r="1" gradientTransform="translate(24 20) rotate(48) scale(359 244)" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" stop-opacity=".85"/><stop offset=".44" stop-color="#fff" stop-opacity=".26"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="left-refraction" cx="0" cy="0" r="1" gradientTransform="translate(314 236) rotate(-106) scale(172 62)" gradientUnits="userSpaceOnUse"><stop stop-color="#e0ffff" stop-opacity=".75"/><stop offset="1" stop-color="#c2faff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="right-refraction" cx="0" cy="0" r="1" gradientTransform="translate(9 290) rotate(-44) scale(304 139)" gradientUnits="userSpaceOnUse"><stop stop-color="#3fc6ff" stop-opacity=".42"/><stop offset="1" stop-color="#74d7ff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="cap-light" cx="0" cy="0" r="1" gradientTransform="translate(462 211) rotate(67) scale(211 250)" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" stop-opacity=".62"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <filter id="cast-shadow" x="-50%" y="-40%" width="200%" height="200%"><feGaussianBlur stdDeviation="30"/></filter>
+    <filter id="panel-shadow" x="-40%" y="-30%" width="180%" height="180%"><feDropShadow dx="-8" dy="20" stdDeviation="20" flood-color="#002caa" flood-opacity=".42"/></filter>
+    <clipPath id="tile-clip"><rect x="30" y="30" width="964" height="964" rx="244"/></clipPath>
+    <path id="cap-shape" d="M291 273 479 166Q512 147 546 166L737 273Q769 291 738 311L546 425Q513 444 480 426L290 316Q258 296 291 273Z"/>
+    <path id="cross" d="M148 99Q137 99 137 111V148H101Q89 148 89 160V185Q89 197 101 197H137V233Q137 245 149 245H174Q186 245 186 233V197H222Q234 197 234 185V160Q234 148 222 148H186V111Q186 99 174 99Z"/>
+    <mask id="left-cutouts" maskUnits="userSpaceOnUse" x="-30" y="-30" width="390" height="410"><rect x="-30" y="-30" width="390" height="410" fill="white"/><use href="#cross" fill="black"/></mask>
+    <mask id="right-cutouts" maskUnits="userSpaceOnUse" x="-30" y="-30" width="390" height="410"><rect x="-30" y="-30" width="390" height="410" fill="white"/><circle cx="217" cy="142" r="43" fill="black"/><circle cx="107" cy="205" r="43" fill="black"/></mask>
+  </defs>
+  <g clip-path="url(#tile-clip)">
+    <rect x="30" y="30" width="964" height="964" fill="url(#tile)"/>
+    <rect x="30" y="30" width="964" height="964" fill="url(#blue-depth)"/>
+    <rect x="30" y="30" width="964" height="964" fill="url(#upper-light)"/>
+    <rect x="30" y="30" width="964" height="964" fill="url(#lower-light)"/>
+    <rect x="30" y="30" width="964" height="964" fill="url(#lower-left)"/>
+    <ellipse cx="520" cy="764" rx="246" ry="112" fill="#0030ab" opacity=".63" filter="url(#cast-shadow)"/>
+    <!-- The blue core remains visible in the gaps between the three faces. -->
+    <path d="M278 297 512 433V777L278 638Z" fill="url(#core-left)"/>
+    <path d="M512 433 750 297V638L512 777Z" fill="url(#core-right)"/>
+    <use href="#cap-shape" transform="translate(0 10)" fill="url(#cap-bevel)"/>
+    <use href="#cap-shape" fill="url(#cap)" stroke="#f5ffff" stroke-width="3"/>
+    <use href="#cap-shape" fill="url(#cap-light)"/>
+    <path d="M291 275 480 168Q512 150 545 168L736 275" stroke="white" stroke-width="3" stroke-opacity=".75" stroke-linecap="round"/>
+    <!-- Affine planes keep the pad and circular bores in perspective. -->
+    <g transform="matrix(.8660254 .5 0 1 176 344)">
+      <g filter="url(#panel-shadow)">
+        <rect x="14" y="-5" width="320" height="320" rx="57" fill="url(#left-edge)"/>
+        <rect width="320" height="320" rx="57" fill="url(#left-glass)" mask="url(#left-cutouts)"/>
+        <rect width="320" height="320" rx="57" fill="url(#face-light)" mask="url(#left-cutouts)"/>
+        <rect width="320" height="320" rx="57" fill="url(#left-refraction)" mask="url(#left-cutouts)"/>
+      </g>
+      <use href="#cross" fill="url(#cross-well)"/>
+      <use href="#cross" stroke="#edffff" stroke-width="2.8" stroke-linejoin="round"/>
+      <path d="M57 3H263Q317 3 317 57V263Q317 306 278 315" stroke="white" stroke-width="4" stroke-opacity=".7" stroke-linecap="round"/>
+      <path d="M2 63V264Q2 317 57 317" stroke="#d2f6ff" stroke-width="2.5" stroke-opacity=".75"/>
+    </g>
+    <g transform="matrix(.8660254 -.5 0 1 570 504)">
+      <g filter="url(#panel-shadow)">
+        <rect x="-17" y="-7" width="320" height="320" rx="57" fill="url(#right-edge)"/>
+        <rect width="320" height="320" rx="57" fill="url(#right-glass)" mask="url(#right-cutouts)"/>
+        <rect width="320" height="320" rx="57" fill="url(#face-light)" mask="url(#right-cutouts)"/>
+        <rect width="320" height="320" rx="57" fill="url(#right-refraction)" mask="url(#right-cutouts)"/>
+      </g>
+      <circle cx="217" cy="142" r="43" fill="url(#button-well)" stroke="#f3ffff" stroke-width="3"/>
+      <circle cx="107" cy="205" r="43" fill="url(#button-well)" stroke="#f3ffff" stroke-width="3"/>
+      <path d="M57 3H263Q317 3 317 57" stroke="white" stroke-width="4" stroke-opacity=".85" stroke-linecap="round"/>
+      <path d="M3 61V263Q3 317 57 317" stroke="#eaffff" stroke-width="4" stroke-opacity=".9"/>
+    </g>
+  </g>
+  <rect x="31.5" y="31.5" width="961" height="961" rx="242.5" stroke="url(#rim)" stroke-width="3"/>
+</svg>

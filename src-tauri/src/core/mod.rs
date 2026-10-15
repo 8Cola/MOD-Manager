@@ -111,6 +111,8 @@ pub struct Service {
     lib: Library,
     warnings: Vec<String>,
     last_maintenance: Option<std::time::Instant>,
+    view_cache: Option<Value>,
+    view_revision: u64,
 }
 fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -366,6 +368,9 @@ fn no_replace_move(from: &Path, to: &Path) -> Result<(), String> {
     }
 }
 impl Service {
+    pub(crate) fn theme_preference(&self) -> &str {
+        &self.lib.settings.theme
+    }
     pub(crate) fn monitor_configuration(&self) -> Value {
         // Watch registration only needs directory configuration, not a disk
         // reconciliation of every MOD and a serialization of every leaf.
@@ -416,6 +421,8 @@ impl Service {
             lib,
             warnings: vec![],
             last_maintenance: None,
+            view_cache: None,
+            view_revision: 0,
         };
         s.conn
             .execute_batch(
@@ -451,9 +458,46 @@ impl Service {
         })
     }
     fn persist(&mut self) -> Result<(), String> {
+        self.invalidate_view();
         let raw = serde_json::to_string(&self.lib).map_err(error)?;
-        self.conn.execute("INSERT INTO library(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data",params![raw]).map_err(error)?;
+        self.conn.execute("INSERT INTO library(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE library.data<>excluded.data",params![raw]).map_err(error)?;
         Ok(())
+    }
+    fn invalidate_view(&mut self) {
+        self.view_revision = self.view_revision.wrapping_add(1);
+        self.view_cache = None;
+    }
+    pub(crate) fn folder_path(
+        &self,
+        game: Option<&str>,
+        folder: Option<&str>,
+    ) -> Result<PathBuf, String> {
+        let path = match game {
+            None => self.data_dir.clone(),
+            Some(id) => {
+                let g = self
+                    .lib
+                    .games
+                    .iter()
+                    .find(|g| g.id == id)
+                    .ok_or("未找到游戏")?;
+                match folder {
+                    Some(id) => g
+                        .folders
+                        .iter()
+                        .find(|f| f.id == id)
+                        .ok_or("未找到游戏目录")?
+                        .path
+                        .clone(),
+                    None => g.mod_dir.clone(),
+                }
+            }
+        };
+        reject_links(&path)?;
+        if !path.is_dir() {
+            return Err("目录不存在，请检查路径或磁盘连接".into());
+        }
+        Ok(path)
     }
     fn recover(&mut self) -> Result<(), String> {
         let rows = {
@@ -674,7 +718,11 @@ impl Service {
         rows.filter_map(Result::ok).collect()
     }
     fn snapshot(&mut self) -> Value {
+        self.invalidate_view();
         self.reconcile();
+        self.snapshot_reconciled()
+    }
+    fn snapshot_reconciled(&mut self) -> Value {
         let mods: Vec<Value> = self.lib.mods.iter().map(Self::mod_value).collect();
         let view: Value = self
             .conn
@@ -684,7 +732,32 @@ impl Service {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(json!({}));
-        json!({"games":self.lib.games,"mods":mods,"settings":self.lib.settings,"view":view,"recentDeletions":self.recent_deletions(),"pendingImports":self.pending_imports(),"dataDir":self.data_dir,"monitoring":"正在监控","warnings":self.warnings})
+        let value = json!({"revision":self.view_revision,"games":self.lib.games,"mods":mods,"settings":self.lib.settings,"view":view,"recentDeletions":self.recent_deletions(),"pendingImports":self.pending_imports(),"dataDir":self.data_dir,"monitoring":"正在监控","warnings":self.warnings});
+        self.view_cache = Some(value.clone());
+        value
+    }
+    fn cache_patch(&mut self, previous: Option<Value>, mods: &[Value], scope: Option<&Value>) {
+        if let Some(mut cached) = previous {
+            if let Some(all) = cached["mods"].as_array_mut() {
+                if let Some(scope) = scope {
+                    all.retain(|m| {
+                        m["gameId"] != scope["gameId"]
+                            || (!scope["folderId"].is_null() && m["folderId"] != scope["folderId"])
+                    });
+                    all.extend(mods.iter().cloned());
+                } else {
+                    for updated in mods {
+                        if let Some(m) = all.iter_mut().find(|m| m["id"] == updated["id"]) {
+                            *m = updated.clone();
+                        }
+                    }
+                }
+            }
+            cached["revision"] = json!(self.view_revision);
+            cached["settings"] = json!(self.lib.settings);
+            cached["warnings"] = json!(self.warnings);
+            self.view_cache = Some(cached);
+        }
     }
     fn mod_value(m: &Mod) -> Value {
         let mut value = serde_json::to_value(m).expect("Mod metadata serializes");
@@ -813,6 +886,23 @@ impl Service {
         self.persist()
     }
     fn scan(&mut self, game_id: Option<&str>) -> Result<(), String> {
+        self.scan_folder(game_id, None)
+    }
+    fn scan_folder(
+        &mut self,
+        game_id: Option<&str>,
+        folder_id: Option<&str>,
+    ) -> Result<(), String> {
+        if let Some(fid) = folder_id {
+            if !self
+                .lib
+                .games
+                .iter()
+                .any(|g| Some(g.id.as_str()) == game_id && g.folders.iter().any(|f| f.id == fid))
+            {
+                return Err("未找到要刷新的游戏目录".into());
+            }
+        }
         if self
             .conn
             .query_row("SELECT COUNT(*) FROM file_edits", [], |r| {
@@ -832,6 +922,13 @@ impl Service {
             .collect();
         for g in games {
             if game_id.is_some_and(|id| id != g.id) {
+                continue;
+            }
+            if folder_id.is_some_and(|id| {
+                !g.folders
+                    .iter()
+                    .any(|f| f.id == id && same(&f.path, &g.mod_dir))
+            }) {
                 continue;
             }
             if let Err(e) = reject_links(&g.mod_dir) {
@@ -963,7 +1060,17 @@ impl Service {
                 });
             }
         }
-        self.reconcile();
+        let affected: HashSet<_> = self
+            .lib
+            .mods
+            .iter()
+            .filter(|m| {
+                game_id.is_none_or(|id| m.game_id == id)
+                    && folder_id.is_none_or(|id| m.folder_id == id)
+            })
+            .map(|m| m.id.clone())
+            .collect();
+        self.reconcile_selected(Some(&affected));
         self.persist()
     }
     fn save_game(&mut self, v: &Value) -> Result<(), String> {
@@ -1774,6 +1881,18 @@ impl Service {
         v: Value,
         progress: impl FnMut(Value),
     ) -> Result<Value, String> {
+        let action = v.get("action").and_then(Value::as_str).unwrap_or_default();
+        // Reading the verified view, a picture, or scroll position does not
+        // require cloning the entire library for mutation rollback.
+        if matches!(
+            action,
+            "snapshot" | "viewSnapshot" | "previewImage" | "saveView" | "saveCrop"
+        ) {
+            return self.dispatch(v);
+        }
+        if !(v["compact"] == true && matches!(action, "editMod" | "scan" | "settings")) {
+            self.invalidate_view();
+        }
         let before = self.lib.clone();
         let prior_warnings = self.warnings.clone();
         let ordinary = !matches!(
@@ -1798,6 +1917,7 @@ impl Service {
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or(before);
             self.reconcile();
+            self.invalidate_view();
         }
         result
     }
@@ -1847,6 +1967,17 @@ impl Service {
         let action = string(&v, "action")?;
         match action.as_str() {
             "snapshot" => return Ok(self.snapshot()),
+            "viewSnapshot" => {
+                if self.view_cache.is_some() && v["revision"].as_u64() == Some(self.view_revision) {
+                    return Ok(
+                        json!({"unchanged":true,"revision":self.view_revision,"warnings":self.warnings}),
+                    );
+                }
+                return Ok(match self.view_cache.as_ref() {
+                    Some(cached) => cached.clone(),
+                    None => self.snapshot(),
+                });
+            }
             "resolveImport" => self.resolve_import(&v)?,
             "maintenance" => self.maintain_storage()?,
             "saveCrop" => return self.save_crop(&v),
@@ -1898,8 +2029,49 @@ impl Service {
                 self.lib.mods.retain(|m| m.game_id != id);
                 self.persist()?;
             }
-            "scan" => self.scan(v.get("gameId").and_then(Value::as_str))?,
-            "editMod" => self.edit_mod(&v)?,
+            "scan" => {
+                let cached = self.view_cache.take();
+                let game = v.get("gameId").and_then(Value::as_str);
+                let folder = v.get("folderId").and_then(Value::as_str);
+                self.scan_folder(game, folder)?;
+                if v["compact"] == true && game.is_some() {
+                    let mods: Vec<_> = self
+                        .lib
+                        .mods
+                        .iter()
+                        .filter(|m| {
+                            Some(m.game_id.as_str()) == game
+                                && folder.is_none_or(|id| m.folder_id == id)
+                        })
+                        .map(Self::mod_value)
+                        .collect();
+                    let scope = json!({"gameId":game,"folderId":folder});
+                    self.cache_patch(cached, &mods, Some(&scope));
+                    return Ok(
+                        json!({"mods":mods,"scope":scope,"warnings":self.warnings,"revision":self.view_revision}),
+                    );
+                }
+                return Ok(self.snapshot_reconciled());
+            }
+            "editMod" => {
+                let cached = self.view_cache.take();
+                self.edit_mod(&v)?;
+                if v["compact"] == true {
+                    let id = string(&v, "id")?;
+                    self.reconcile_one(&id);
+                    let mods: Vec<_> = self
+                        .lib
+                        .mods
+                        .iter()
+                        .filter(|m| m.id == id)
+                        .map(Self::mod_value)
+                        .collect();
+                    self.cache_patch(cached, &mods, None);
+                    return Ok(
+                        json!({"mods":mods,"warnings":self.warnings,"revision":self.view_revision}),
+                    );
+                }
+            }
             "renameMember" => self.rename_member(&v)?,
             "deleteMod" => self.delete_mod(&v)?,
             "restoreMod" => self.restore_mod(&v)?,
@@ -1914,6 +2086,9 @@ impl Service {
                     return Err("界面位置记录过大".into());
                 }
                 self.conn.execute("INSERT INTO preferences(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data",params![raw]).map_err(error)?;
+                if let Some(cached) = self.view_cache.as_mut() {
+                    cached["view"] = v["view"].clone();
+                }
                 return Ok(json!({"success":true}));
             }
             "forgetMod" => self.forget_mod(&v)?,
@@ -1922,19 +2097,30 @@ impl Service {
             "setMembers" => self.members(&v, false)?,
             "ungroup" => self.members(&v, true)?,
             "settings" => {
+                let cached = self.view_cache.take();
+                let previous = self.lib.settings.clone();
+                let mut next = previous.clone();
                 if let Some(t) = v.get("theme").and_then(Value::as_str) {
                     if !["system", "light", "dark"].contains(&t) {
                         return Err("未知外观模式".into());
                     }
-                    self.lib.settings.theme = t.into();
+                    next.theme = t.into();
                 }
                 if let Some(t) = v.get("defaultStrategy").and_then(Value::as_str) {
                     if !["suffix", "move"].contains(&t) {
                         return Err("未知禁用策略".into());
                     }
-                    self.lib.settings.default_strategy = t.into();
+                    next.default_strategy = t.into();
                 }
-                self.persist()?;
+                self.lib.settings = next;
+                if let Err(error) = self.persist() {
+                    self.lib.settings = previous;
+                    return Err(error);
+                }
+                if v.get("compact").and_then(Value::as_bool) == Some(true) {
+                    self.cache_patch(cached, &[], None);
+                    return Ok(json!({"settings":self.lib.settings}));
+                }
             }
             "toggle" => {
                 return self.toggle_batch(&v, |_| {});

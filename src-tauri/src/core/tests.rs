@@ -2,6 +2,127 @@ use super::*;
 use serde_json::json;
 use tempfile::tempdir;
 #[test]
+fn folder_refresh_only_discovers_and_reconciles_requested_folder() {
+    let (t, mut s, _, _) = setup();
+    let a = t.path().join("scope-a");
+    let b = t.path().join("scope-b");
+    fs::create_dir_all(&a).unwrap();
+    fs::create_dir_all(&b).unwrap();
+    let saved=s.request(json!({"action":"saveGame","game":{"name":"Scoped","strategy":"suffix","folders":[{"name":"A","path":a},{"name":"B","path":b}]}})).unwrap();
+    let game = saved["games"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["name"] == "Scoped")
+        .unwrap();
+    let gid = game["id"].clone();
+    let fid = game["folders"][0]["id"].clone();
+    let other = game["folders"][1]["id"].clone();
+    fs::write(a.join("first.pak"), "a").unwrap();
+    fs::write(b.join("second.pak"), "b").unwrap();
+    let reply = s
+        .request(json!({"action":"scan","gameId":gid,"folderId":fid,"compact":true}))
+        .unwrap();
+    assert!(reply.get("games").is_none());
+    assert_eq!(reply["scope"]["folderId"], fid);
+    assert_eq!(reply["mods"].as_array().unwrap().len(), 1);
+    assert!(!s
+        .lib
+        .mods
+        .iter()
+        .any(|m| m.folder_id == other.as_str().unwrap()));
+    s.request(json!({"action":"scan","gameId":gid})).unwrap();
+    fs::remove_file(b.join("second.pak")).unwrap();
+    s.request(json!({"action":"scan","gameId":gid,"folderId":fid,"compact":true}))
+        .unwrap();
+    assert!(
+        s.lib
+            .mods
+            .iter()
+            .find(|m| m.folder_id == other.as_str().unwrap())
+            .unwrap()
+            .members[0]
+            .exists,
+        "refreshing A must not reconcile B"
+    );
+    assert!(s
+        .request(json!({"action":"scan","gameId":gid,"folderId":"unknown"}))
+        .is_err());
+}
+
+#[test]
+fn cached_view_reuses_verified_snapshot_until_scan_and_metadata_updates_patch_one_mod() {
+    let (_t, mut s, gid, root) = setup();
+    fs::write(root.join("cached.pak"), "original").unwrap();
+    let initial = s.request(json!({"action":"scan","gameId":gid})).unwrap();
+    let revision = initial["revision"].clone();
+    let id = initial["mods"][0]["id"].clone();
+    fs::remove_file(root.join("cached.pak")).unwrap();
+    let unchanged = s
+        .request(json!({"action":"viewSnapshot","revision":revision}))
+        .unwrap();
+    assert_eq!(unchanged["unchanged"], true);
+    assert!(
+        s.lib.mods[0].members[0].exists,
+        "cached read must not touch disk"
+    );
+    let reply = s
+        .request(json!({"action":"editMod","id":id,"description":"备注","compact":true}))
+        .unwrap();
+    assert!(reply.get("games").is_none());
+    assert_eq!(reply["mods"][0]["description"], "备注");
+    assert_eq!(
+        reply["mods"][0]["state"], "missing",
+        "target is still verified"
+    );
+    let fresh = s
+        .request(json!({"action":"viewSnapshot","revision":revision}))
+        .unwrap();
+    assert_eq!(fresh["mods"][0]["description"], "备注");
+    assert_ne!(fresh["revision"], revision);
+}
+
+#[test]
+fn opening_configured_folder_does_not_reconcile_library() {
+    let (_t, mut s, gid, root) = setup();
+    fs::write(root.join("path-only.pak"), "original").unwrap();
+    s.request(json!({"action":"scan","gameId":gid})).unwrap();
+    let revision = s.view_revision;
+    fs::remove_file(root.join("path-only.pak")).unwrap();
+    assert!(same(&s.folder_path(Some(&gid), None).unwrap(), &root));
+    assert!(s.lib.mods[0].members[0].exists);
+    assert_eq!(s.view_revision, revision);
+    assert!(s.folder_path(Some(&gid), Some("unknown")).is_err());
+}
+
+#[test]
+fn compact_settings_save_skips_library_reconcile_and_restores_on_write_failure() {
+    let (t, mut s, g, r) = setup();
+    fs::write(r.join("theme.pak"), "unchanged").unwrap();
+    s.request(json!({"action":"scan","gameId":g})).unwrap();
+    fs::remove_file(r.join("theme.pak")).unwrap();
+    let before = serde_json::to_value(&s.lib.mods).unwrap();
+    let reply = s
+        .request(json!({"action":"settings","theme":"dark","compact":true}))
+        .unwrap();
+    assert!(reply.get("games").is_none());
+    assert_eq!(reply["settings"]["theme"], "dark");
+    assert_eq!(serde_json::to_value(&s.lib.mods).unwrap(), before);
+    s.conn.execute_batch("PRAGMA query_only=ON").unwrap();
+    assert!(s
+        .request(json!({"action":"settings","theme":"light","compact":true}))
+        .is_err());
+    assert_eq!(s.theme_preference(), "dark");
+    drop(s);
+    assert_eq!(
+        Service::new(t.path().join("data"))
+            .unwrap()
+            .theme_preference(),
+        "dark"
+    );
+}
+
+#[test]
 fn batch_progress_is_verified_per_item_and_reports_partial_failure() {
     let (_t, mut s, g, r) = setup();
     for name in ["a.pak", "b.pak"] {

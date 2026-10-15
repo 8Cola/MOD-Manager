@@ -1,5 +1,13 @@
 # 测试说明
 
+## 2.0.0 发布验证
+
+2026-10-16：Windows 核心回归 100 项通过、0 失败，另 1 项性能探针默认忽略；前端生产构建、Windows Release 构建和 EXE 内嵌图标资源核对通过。真实 WebView 的性能/文件状态、手动保存/封面、主题检查分别为 8、7、6 组，均在独立测试目录完成。
+
+新增入口为 `qa-library-performance.cjs` 与 `qa-startup-theme.cjs`。后者需要运行在 1421 端口的 Vite，并占用 1420 端口代理以验证首屏加载；请与其他使用 1420 端口的验收分开运行。更详细的范围见 `PERFORMANCE.md`、`STARTUP-THEME.md` 和 `BRANDING.md`。
+
+## 1.0.0 发布记录
+
 2026-10-12 开源发布前重新运行前端类型检查／生产构建和 Windows Rust 回归测试：96 项通过、0 失败，另有一个默认忽略的耗时探针，可独立运行。GitHub Actions 会在 main 推送及 Pull Request 时检查前端构建、Rust 格式和核心回归。
 
 ```powershell

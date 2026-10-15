@@ -1,20 +1,24 @@
 import { ImageSourcePicker } from './components/ImageSourcePicker';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { applyTheme, startupTheme } from './theme';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ClipboardPaste, ZoomIn, ZoomOut, ArrowUpRight, ArrowLeft, Check, CheckCheck, ChevronRight, CircleHelp, File, Folder, FolderOpen, Gamepad2, Layers, LoaderCircle, Monitor, Moon, MoreHorizontal, Plus, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, Sun, Trash2, Upload, Download, X, AlertCircle, Minus, Square, Copy, Play, Box, Database, Info } from 'lucide-react';
+import { ClipboardPaste, ZoomIn, ZoomOut, ArrowUpRight, ArrowLeft, Check, CheckCheck, ChevronRight, CircleHelp, File, Folder, FolderOpen, Gamepad2, Layers, LoaderCircle, Monitor, Moon, Plus, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, Sun, Trash2, Upload, Download, X, AlertCircle, Minus, Square, Copy, Play, Box, Database, Info } from 'lucide-react';
 import { desktop, imageUrl, request } from './api';
 import { FolderEditor } from './components/FolderEditor';
 import { DirectoryPicker } from './components/DirectoryPicker';
 import { ModContextMenu } from './components/ModContextMenu';
+import { ModImage, ModListRow } from './components/ModListRow';
 import { DropImportOverlay, type DropTarget, type ImportProgress } from './components/DropImportOverlay';
 import { ImageCropper } from './components/ImageCropper';
 import type { PendingImport } from './types';
 import appIconUrl from './assets/app-icon.svg';
+import { version as appVersion } from '../package.json';
 import { basename, displayPath, modName, memberSummary, type ViewPreferences, type Game, type Mod, type Snapshot, type Strategy, type Theme } from './types';
 
-const blank: Snapshot = { games: [], mods: [], settings: { theme: 'system', defaultStrategy: 'suffix' }, dataDir: '', monitoring: '', warnings: [] };
+const blank: Snapshot = { games: [], mods: [], settings: { theme: startupTheme(), defaultStrategy: 'suffix' }, dataDir: '', monitoring: '', warnings: [] };
 const states = { enabled: '已开启', disabled: '已关闭', mixed: '状态不一致', missing: '文件缺失', error: '需要检查' };
 type ToggleResult = {id:string;success:boolean;error?:string};
 type ToggleReply = {results:ToggleResult[];mods:Mod[];warnings:string[]};
@@ -79,11 +83,6 @@ function GameImage({ game }: { game: Game }) {
   useEffect(() => setFailed(false), [game.imagePath]);
   return <span className="game-image">{game.imagePath && !failed ? <img src={imageUrl(game.imagePath)} alt="" onError={() => setFailed(true)}/> : <Gamepad2 size={22}/>}</span>;
 }
-function ModImage({ mod }: { mod: Mod }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [mod.imagePath]);
-  return <span className={`mod-symbol ${mod.members.length > 1 ? 'group' : ''}`}>{mod.imagePath && !failed ? <img src={imageUrl(mod.imagePath)} alt="" onError={() => setFailed(true)}/> : mod.members.some(m => m.kind === 'directory') ? <Folder size={27}/> : mod.members.length > 1 ? <Layers size={27}/> : <File size={27}/>}</span>;
-}
 
 export default function App() {
   const [data, setData] = useState<Snapshot>(blank);
@@ -107,10 +106,18 @@ export default function App() {
     viewTimer.current = setTimeout(() => { void request('saveView', {view:view.current}).catch(() => {}); }, 250);
   }, []);
   const [selected, setSelected] = useState<string[]>([]);
+  const selectedIds=useMemo(()=>new Set(selected),[selected]);
+  const selectRow=useCallback((id:string,checked:boolean)=>setSelected(previous=>checked?[...new Set([...previous,id])]:previous.filter(item=>item!==id)),[]);
   const [selecting, setSelecting] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const snapshotSequence = useRef(0);
+  const viewRevision = useRef<number | undefined>(undefined);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const refreshQueued = useRef(false);
+  const pendingTheme = useRef<Theme | null>(null);
+  const confirmedTheme = useRef<Theme>(startupTheme());
+  const themeSave = useRef<Promise<void> | null>(null);
   const [pendingAction, setPendingAction] = useState('');
   const [togglingIds, setTogglingIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(desktop);
@@ -128,27 +135,55 @@ export default function App() {
   const [importProgress,setImportProgress] = useState<ImportProgress|null>(null);
   const [cancelRequested,setCancelRequested] = useState(false);
   const [windowClosing,setWindowClosing] = useState(false);
+  const latestToggle=useRef(toggle);latestToggle.current=toggle;
+  const toggleRow=useCallback((id:string,enabled:boolean)=>void latestToggle.current([id],enabled),[]);
+  const contextRow=useCallback((mod:Mod,x:number,y:number)=>{if(!busyRef.current)setContext({mod,x,y});},[]);
   const game = data.games.find(g => g.id === gameId) || data.games[0];
   const folderChoice = game ? folderChoices[game.id] : undefined;
   const folder = game?.folders.find(f => f.id === folderChoice) || game?.folders[0];
   const history = folderChoice === '__history' && data.mods.some(m => m.gameId === game?.id && m.retired);
   const activeFolderId = history ? '__history' : folder?.id;
-  const mods = data.mods.filter(m => m.gameId === game?.id && (history ? m.retired : !m.retired && m.folderId === folder?.id));
-  const hasHistory = data.mods.some(m => m.gameId === game?.id && m.retired);
-  const filtered = mods.filter(m => [modName(m), m.description, ...m.members.map(f => basename(f.originalPath))].join(' ').toLowerCase().includes(search.toLowerCase()));
+  const mods = useMemo(()=>data.mods.filter(m => m.gameId === game?.id && (history ? m.retired : !m.retired && m.folderId === folder?.id)),[data.mods,game?.id,history,folder?.id]);
+  const hasHistory = useMemo(()=>data.mods.some(m => m.gameId === game?.id && m.retired),[data.mods,game?.id]);
+  const searchIndex = useMemo(()=>new Map(mods.map(m=>[m.id,[modName(m),m.description,...m.members.map(f=>basename(f.originalPath))].join(' ').toLowerCase()])),[mods]);
+  const deferredSearch=useDeferredValue(search).toLowerCase();
+  const filtered=useMemo(()=>mods.filter(m=>searchIndex.get(m.id)!.includes(deferredSearch)),[mods,searchIndex,deferredSearch]);
+  const gameCounts=useMemo(()=>{const counts=new Map<string,{total:number;enabled:number}>();for(const mod of data.mods){if(mod.retired)continue;const count=counts.get(mod.gameId)||{total:0,enabled:0};count.total++;if(mod.state==='enabled')count.enabled++;counts.set(mod.gameId,count);}return counts;},[data.mods]);
   const detail = data.mods.find(m => m.id === detailId);
-  const reload = useCallback(async (force = false) => {
+  const acceptSnapshot = useCallback((next: Snapshot) => {
+    viewRevision.current=next.revision;
+    if (pendingTheme.current === null) confirmedTheme.current = next.settings.theme;
+    setData(pendingTheme.current === null ? next : {...next,settings:{...next.settings,theme:pendingTheme.current}});
+  }, []);
+  const reload = useCallback(async (force = false):Promise<void> => {
     if (!desktop || (busyRef.current && !force)) return;
+    if (!force && refreshInFlight.current) {refreshQueued.current=true;return refreshInFlight.current;}
+    const work=(async()=>{
     const sequence = ++snapshotSequence.current;
-    const next = await request('snapshot');
+    const next = await request<Snapshot & {unchanged?:boolean}>(force?'snapshot':'viewSnapshot',force?{}:{revision:viewRevision.current});
+    if (sequence!==snapshotSequence.current || (busyRef.current&&!force)) return;
+    if(next.unchanged){
+      setData(previous=>previous.monitoring===next.monitoring&&JSON.stringify(previous.warnings)===JSON.stringify(next.warnings)?previous:{...previous,monitoring:next.monitoring,warnings:next.warnings});
+      return;
+    }
     if (!viewInitialized.current) {
       const saved = next.view || {};
       view.current = saved; viewInitialized.current = true;
       setGameId(typeof saved.gameId === 'string' ? saved.gameId : '');
       setFolderChoices(saved.folderChoices || {});
     }
-    if (sequence === snapshotSequence.current && (!busyRef.current || force)) setData(next);
-  }, []);
+    if (sequence === snapshotSequence.current && (!busyRef.current || force)) {
+      acceptSnapshot(next);
+    }
+    })();
+    if(!force)refreshInFlight.current=work;
+    try{await work;}finally{
+      if(refreshInFlight.current===work){
+        refreshInFlight.current=null;
+        if(refreshQueued.current){refreshQueued.current=false;queueMicrotask(()=>void reload().catch(e=>setError(String(e))));}
+      }
+    }
+  }, [acceptSnapshot]);
   useEffect(()=>{
     if(!desktop)return;
     let disposed=false;let off:(()=>void)|undefined;
@@ -159,22 +194,32 @@ export default function App() {
     if (!desktop) return;
     void reload().catch(e => setError(String(e))).finally(() => setLoading(false));
     let unlisten: (() => void) | undefined;
-    void listen('library-changed', () => void reload().catch(e => setError(String(e)))).then(fn => { unlisten = fn; });
+    let refreshTimer:ReturnType<typeof setTimeout>|undefined;
+    void listen('library-changed', () => {clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>void reload().catch(e=>setError(String(e))),100);}).then(fn => { unlisten = fn; });
     // Native watcher events drive changes; this is only a missed-event fallback.
-    const timer = window.setInterval(() => void reload().catch(() => {}), 15000);
-    return () => { clearInterval(timer); unlisten?.(); };
+    const timer = window.setInterval(() => {if(!document.hidden)void reload().catch(()=>{});}, 15000);
+    const visible=()=>{if(!document.hidden)void reload().catch(()=>{});};document.addEventListener('visibilitychange',visible);
+    return () => { clearInterval(timer);clearTimeout(refreshTimer);document.removeEventListener('visibilitychange',visible);unlisten?.(); };
   }, [reload]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => document.documentElement.dataset.theme = data.settings.theme === 'system' ? (media.matches ? 'dark' : 'light') : data.settings.theme;
+    const apply = () => {const dark=applyTheme(data.settings.theme);if(desktop)void invoke('sync_theme',{theme:data.settings.theme,dark,ready:false}).catch(e=>setError(String(e)));};
     apply(); media.addEventListener('change', apply); return () => media.removeEventListener('change', apply);
   }, [data.settings.theme]);
+  const startupShown=useRef(false);
+  useLayoutEffect(()=>{
+    if(!desktop||loading||startupShown.current)return;
+    startupShown.current=true;
+    // Hidden WebViews may pause animation frames. The layout effect runs after
+    // DOM commit without waiting for a hidden-window requestAnimationFrame.
+    void invoke('sync_theme',{theme:data.settings.theme,dark:applyTheme(data.settings.theme),ready:true}).catch(e=>{setError(String(e));});
+  },[loading,data.settings.theme]);
   useEffect(() => { setSelected([]); setSearch(''); setSelecting(false); setDetailId(null); setContext(null); }, [game?.id, activeFolderId]);
   useEffect(() => {
     if (!game || !viewInitialized.current) return;
     view.current = {...view.current, gameId:game.id, folderChoices}; persistView();
   }, [game?.id, folderChoices, persistView]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (settings || !libraryScroll.current) return;
     libraryScroll.current.scrollTop = search ? 0 : Math.max(0, Number(view.current.scrolls?.[`${game?.id}:${activeFolderId}`]) || 0);
   }, [settings, game?.id, activeFolderId, !!search, loading]);
@@ -202,6 +247,7 @@ export default function App() {
       void (async()=>{
         if(closeGuard.current && !await closeGuard.current()){closing=false;setWindowClosing(false);return;}
         if(activeImport.current){setCancelRequested(true);await request('cancelImport',{operationId:activeImport.current.id});await activeImport.current?.done;}
+        await themeSave.current;
         await request('saveView',{view:view.current});
         await win.destroy();
       })().catch(e=>{closing=false;setWindowClosing(false);setError(`关闭前保存未完成：${String(e)}`);});
@@ -215,8 +261,42 @@ export default function App() {
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
   }, [settings, editor, detailId, grouping, confirmDelete, deleteMod]);
+  function saveAppearance(value: Record<string, unknown>) {
+    const theme=value.theme as Theme;
+    if (!desktop || !['system','light','dark'].includes(theme)) return;
+    pendingTheme.current=theme;
+    ++snapshotSequence.current;
+    applyTheme(theme);
+    setData(previous=>({...previous,settings:{...previous.settings,theme}}));
+    setError('');
+    if (themeSave.current) return;
+    // Serialize writes, coalescing repeated clicks to the latest choice. A slow
+    // disk or library scan must never delay the visible appearance change.
+    themeSave.current=(async()=>{
+      while(pendingTheme.current!==null){
+        const saving=pendingTheme.current;
+        try{
+          const reply=await request<{settings:Snapshot['settings']}>('settings',{theme:saving,compact:true});
+          confirmedTheme.current=reply.settings.theme;
+        }catch(e){
+          setError(`外观设置未能保存：${String(e)}`);
+          if(pendingTheme.current===saving){
+            applyTheme(confirmedTheme.current);
+            setData(previous=>({...previous,settings:{...previous.settings,theme:confirmedTheme.current}}));
+          }
+        }
+        if(pendingTheme.current===saving)pendingTheme.current=null;
+      }
+      ++snapshotSequence.current; // Reject snapshots started before the final write.
+    })().finally(()=>{themeSave.current=null;});
+  }
   async function mutate(action: string, args: Record<string, unknown> = {}, success?: string) {
     if (busyRef.current) return false;
+    if(action==='openFolder'||action==='openRecycleBin'){
+      setError('');setErrorModId(null);
+      setErrorFolder(typeof args.gameId==='string'?{gameId:args.gameId,folderId:typeof args.folderId==='string'?args.folderId:undefined}:null);
+      try{await request(action,args);return true;}catch(e){setError(String(e));return false;}
+    }
     busyRef.current = true; ++snapshotSequence.current;
     setBusy(true); setPendingAction(action); setError(''); setErrorModId(typeof args.id === 'string' ? args.id : null);
     const affected=data.mods.find(m=>m.id===args.id);
@@ -224,8 +304,17 @@ export default function App() {
     const owner=affected?.gameId || recovering?.gameId || (typeof args.gameId==='string' ? args.gameId : undefined);
     setErrorFolder(owner ? {gameId:owner,folderId:affected?.folderId || recovering?.folderId || (typeof args.folderId==='string' ? args.folderId : undefined)} : null);
     try {
-      const next=await request(action,args);
-      if(next?.games){setData(next);}else await reload(true);
+      const next=await request<Snapshot & {scope?:{gameId:string;folderId?:string};success?:boolean}>(action,{...args,quiet:true,...(['editMod','scan'].includes(action)?{compact:true}:{})});
+      if(next?.games){acceptSnapshot(next);}
+      else if(next?.mods){
+        viewRevision.current=next.revision;
+        const updates=new Map(next.mods.map(m=>[m.id,m]));
+        setData(previous=>{
+          const retained=previous.mods.filter(m=>!next.scope || m.gameId!==next.scope.gameId || (!!next.scope.folderId&&m.folderId!==next.scope.folderId) || updates.has(m.id));
+          const seen=new Set(retained.map(m=>m.id));
+          return {...previous,mods:[...retained.map(m=>updates.get(m.id)||m),...next.mods.filter(m=>!seen.has(m.id))],warnings:next.warnings,monitoring:next.monitoring||previous.monitoring};
+        });
+      }else if(!next.success)await reload(true);
       if(success)setNotice(success);return true;
     }
     catch (e) { await reload(true).catch(() => {}); setError(String(e)); return false; }
@@ -285,7 +374,7 @@ export default function App() {
     setCancelRequested(false);setImportProgress({operationId,phase:'preparing',copiedBytes:0,totalBytes:0,currentName:'',index:0,count:paths.length});
     try {
       const result=await request<{results:{name:string;success:boolean;cancelled?:boolean;error?:string}[];scanError?:string;batchError?:string;snapshot:Snapshot}>('importFiles',{operationId,gameId:destination.gameId,folderId:destination.folderId,expectedPath:destination.path,paths});
-      setData(result.snapshot);
+      acceptSnapshot(result.snapshot);
       const successes=result.results.filter(r=>r.success).length, failures=result.results.filter(r=>!r.success&&!r.cancelled),cancelled=result.results.filter(r=>r.cancelled).length;
       if(successes||cancelled)setNotice(`${successes?`已添加 ${successes} 个项目到「${destination.folderName}」`:'导入已取消'}${cancelled&&successes?`，${cancelled} 个已取消`:''}${failures.length?`，${failures.length} 个失败`:''}`);
       const errors=failures.map(r=>`${r.name}：${r.error||'导入失败'}`);
@@ -302,7 +391,6 @@ export default function App() {
     try { await navigator.clipboard.writeText(mod.members.map(f => displayPath(f.currentPath)).join('\n')); setNotice('路径已复制'); }
     catch { setErrorModId(mod.id); setError('无法写入剪贴板，请在详情中选择并复制文件路径'); }
   }
-  function showContext(mod:Mod,x:number,y:number) { if (!busy) setContext({mod,x,y}); }
   async function undo(operationId:string) { if (await mutate('restoreMod',{operationId},'文件与管理信息已恢复')) setUndoId(null); }
   useEffect(() => { if (!undoId) return; const timer=setTimeout(() => setUndoId(null),12000); return () => clearTimeout(timer); }, [undoId]);
   const closeEditor = useCallback(() => setEditor(null), []);
@@ -314,21 +402,17 @@ export default function App() {
   return <div className="app-shell"><WindowBar onError={setError}/>
     <aside className="sidebar"><div className="brand"><span className="brand-mark"><img src={appIconUrl} alt=""/></span><span>MOD Manager<small>Simple. Clean. Effortless.</small></span></div>
       <button className="add-game primary" onClick={() => setEditor('new')} disabled={!desktop || busy}><Plus size={19}/>添加游戏</button><div className="section-label">游戏库 {data.games.length > 0 && <span>{data.games.length}</span>}</div>
-      <nav className="games" aria-label="游戏库">{data.games.map(g => { const all = data.mods.filter(m => m.gameId === g.id && !m.retired); return <button key={g.id} className={`game-item ${!settings && game?.id === g.id ? 'active' : ''}`} onClick={() => { setSettings(false); setGameId(g.id); }} title={g.name}><GameImage game={g}/><span className="game-info"><strong>{g.name}</strong><small title="所有目录合计">共 {all.length} 个 MOD · {all.filter(m => m.state === 'enabled').length} 已开启</small></span></button>; })}</nav>
+      <nav className="games" aria-label="游戏库">{data.games.map(g => { const count = gameCounts.get(g.id) || {total:0,enabled:0}; return <button key={g.id} className={`game-item ${!settings && game?.id === g.id ? 'active' : ''}`} onClick={() => { setSettings(false); setGameId(g.id); }} title={g.name}><GameImage game={g}/><span className="game-info"><strong>{g.name}</strong><small title="所有目录合计">共 {count.total} 个 MOD · {count.enabled} 已开启</small></span></button>; })}</nav>
       <div className="sidebar-bottom"><button className={`settings-button ${settings ? 'active' : ''}`} onClick={() => { setSettings(true); setDetailId(null); setSelected([]); setSelecting(false); }}><Settings size={20}/>设置<ChevronRight size={15}/></button></div>
     </aside>
     <main className={`main-content ${settings ? 'settings-content' : game && !loading ? 'library-content' : ''}`}><div className="page-view" key={settings ? 'settings' : game?.id || 'welcome'}>
-      {settings ? <SettingsPage data={data} busy={busy} onBack={closeSettings} onSettings={value => void mutate('settings', value)} onBackup={value => void backup(value)} onRestore={id => void undo(id)} onRecycleBin={() => void mutate('openRecycleBin')} onResolveImport={(id,cleanup)=>mutate('resolveImport',{id,cleanup,confirmed:true},'导入记录已核对')} onRefresh={() => void mutate('scan')} onFolder={() => void mutate('openFolder')}/> : loading ? <div className="empty-state"><LoaderCircle className="spin" size={30}/><h2>正在读取游戏库</h2></div> : !game ? <div className="welcome"><span className="welcome-icon"><Gamepad2 size={44} strokeWidth={1.3}/></span><p className="eyebrow">LESS MANAGING. MORE PLAYING.</p><h1>让每一个 MOD，井然有序。</h1><p>为不同游戏集中管理 MOD，记录用途与备注。<br/>一键启停，把更多时间留给游戏。</p><button className="primary" onClick={() => setEditor('new')} disabled={!desktop}><Plus size={17}/>添加第一个游戏</button><div className="welcome-foot"><ShieldCheck size={15}/>{desktop ? '管理配置保存在本机，MOD 文件始终由你掌控。' : '这是浏览器预览。请在 Windows 桌面程序中添加游戏和管理真实文件。'}</div></div> : <>
+      {settings ? <SettingsPage data={data} busy={busy} onBack={closeSettings} onSettings={saveAppearance} onBackup={value => void backup(value)} onRestore={id => void undo(id)} onRecycleBin={() => void mutate('openRecycleBin')} onResolveImport={(id,cleanup)=>mutate('resolveImport',{id,cleanup,confirmed:true},'导入记录已核对')} onRefresh={() => void mutate('scan')} onFolder={() => void mutate('openFolder')}/> : loading ? <div className="empty-state"><LoaderCircle className="spin" size={30}/><h2>正在读取游戏库</h2></div> : !game ? <div className="welcome"><span className="welcome-icon"><Gamepad2 size={44} strokeWidth={1.3}/></span><p className="eyebrow">LESS MANAGING. MORE PLAYING.</p><h1>让每一个 MOD，井然有序。</h1><p>为不同游戏集中管理 MOD，记录用途与备注。<br/>一键启停，把更多时间留给游戏。</p><button className="primary" onClick={() => setEditor('new')} disabled={!desktop}><Plus size={17}/>添加第一个游戏</button><div className="welcome-foot"><ShieldCheck size={15}/>{desktop ? '管理配置保存在本机，MOD 文件始终由你掌控。' : '这是浏览器预览。请在 Windows 桌面程序中添加游戏和管理真实文件。'}</div></div> : <>
       <div className="library-header"><section className="game-hero"><GameImage game={game}/><div className="hero-content"><div className="page-header"><div><h1 title={game.name}>{game.name}</h1><button className="folder-link" title={history ? '旧目录历史记录' : displayPath(folder?.path || game.modDir)} onClick={() => void mutate('openFolder', { gameId: game.id, folderId: folder?.id })} disabled={busy || history}><span>{history ? '旧目录历史记录 · 不会操作真实文件' : displayPath(folder?.path || game.modDir)}</span></button></div><button className="secondary open-folder" onClick={() => void mutate('openFolder', { gameId: game.id, folderId: folder?.id })} disabled={busy || history}><FolderOpen size={19}/>打开文件夹</button></div><div className="summary-line"><small className="count-scope">{history ? '历史记录' : '当前目录'}</small><span><Box size={18}/><strong>{mods.length}</strong> 个 MOD</span><span><Play size={17}/><strong>{mods.filter(m => m.state === 'enabled').length}</strong> 个已开启</span><span className="strategy-chip" title="是否停止加载取决于游戏，详情中可核对文件状态"><Settings size={17}/>{game.strategy === 'suffix' ? '后缀禁用 .disabled' : '旧版禁用 · 请先恢复'}</span></div></div></section>
       <div className="toolbar"><DirectoryPicker key={game.id} folders={game.folders} value={activeFolderId || ''} hasHistory={hasHistory} disabled={busy} onChange={id => setFolderChoices({...folderChoices,[game.id]:id})}/><label className="search"><Search size={21}/><input ref={searchInput} aria-label="搜索名称" value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称"/>{search && <IconButton label="清空搜索" onClick={() => setSearch('')}><X size={15}/></IconButton>}</label><button className="secondary refresh-button" onClick={() => void mutate('scan', { gameId: game.id, folderId: folder?.id })} disabled={busy} aria-label="刷新目录"><RefreshCw size={18} className={pendingAction === 'scan' ? 'spin' : ''}/><span>手动刷新</span></button><button className={`secondary ${selecting ? 'chosen' : ''}`} onClick={() => { setSelecting(!selecting); setSelected([]); }} disabled={busy}><CheckCheck size={16}/>{selecting ? '完成选择' : '批量管理'}</button><IconButton label="编辑游戏与目录" onClick={() => setEditor(game)} disabled={busy}><Settings size={19}/></IconButton></div>
       {search.trim() && <div className="search-results" role="status">找到 {filtered.length} / {mods.length} 个 MOD</div>}
       </div><div className="library-scroll" key={activeFolderId} ref={libraryScroll} onScroll={e => { if (!search) { view.current={...view.current,scrolls:{...view.current.scrolls,[`${game?.id}:${activeFolderId}`]:e.currentTarget.scrollTop}}; persistView(); } }}>
       {selecting && <div className="selection-heading"><label><input type="checkbox" checked={filtered.length > 0 && filtered.every(m => selected.includes(m.id))} onChange={e => setSelected(e.target.checked ? filtered.map(m => m.id) : [])}/>选择当前结果</label><span>{selected.length} 个已选择</span></div>}
-      <div className="mod-list">{filtered.map(mod => <div key={mod.id} onContextMenu={e => {e.preventDefault(); showContext(mod,e.clientX,e.clientY);}} onKeyDown={e => {if(e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {e.preventDefault(); const r=e.currentTarget.getBoundingClientRect();showContext(mod,r.x+100,r.y+30);}}} className={`mod-row ${selected.includes(mod.id) || detailId === mod.id ? 'selected' : ''}`}>
-        {selecting && <input className="row-check" type="checkbox" aria-label={`选择 ${modName(mod)}`} checked={selected.includes(mod.id)} onChange={e => setSelected(e.target.checked ? [...selected, mod.id] : selected.filter(id => id !== mod.id))}/>}
-        <button className="mod-open" onClick={() => setDetailId(mod.id)}><ModImage mod={mod}/><span className="mod-copy"><strong><span className="mod-name-text">{modName(mod)}</span></strong>{mod.description.trim() && <span className="mod-description">{mod.description}</span>}{(mod.members.length > 1 || mod.members[0]?.kind === 'directory') && <span className="mod-metadata"><span>{mod.members.length > 1 ? <Layers size={13}/> : <Folder size={13}/>} {memberSummary(mod)}</span></span>}</span></button>
-        <div className="row-end"><span className={`state-label ${mod.state}`}><span/>{!mod.managed ? '待确认' : states[mod.state]}</span><button className={`switch ${mod.state === 'enabled' ? 'on' : ''}`} role="switch" aria-checked={mod.state === 'enabled'} aria-busy={togglingIds.includes(mod.id)} aria-label={`${modName(mod)} ${mod.state === 'enabled' ? '关闭' : '开启'}`} onClick={() => void toggle([mod.id], mod.state !== 'enabled')} disabled={busy || !mod.managed || mod.state === 'missing'}><span>{togglingIds.includes(mod.id) && <LoaderCircle size={12} className="spin"/>}</span></button><IconButton label={`查看 ${modName(mod)} 详情`} onClick={() => setDetailId(mod.id)}><MoreHorizontal size={19}/></IconButton></div>
-      </div>)}</div>
+      <div className="mod-list" aria-busy={search.toLowerCase()!==deferredSearch}>{filtered.map(mod => <ModListRow key={mod.id} mod={mod} selected={selectedIds.has(mod.id)} focused={detailId===mod.id} selecting={selecting} busy={busy} toggling={togglingIds.includes(mod.id)} onSelect={selectRow} onOpen={setDetailId} onToggle={toggleRow} onContext={contextRow}/>)}</div>
       {!filtered.length && <div className="empty-state"><FolderOpen size={35} strokeWidth={1.2}/><h2>{search ? '没有找到匹配的 MOD' : '这里准备好了，等待你的 MOD'}</h2><p>{search ? '试试其他名称、文件名或备注。' : '将文件放入游戏的 MOD 目录，它们会自动出现在这里。'}</p>{!search && <button className="secondary" onClick={() => void mutate('openFolder', { gameId: game.id, folderId: folder?.id })}><FolderOpen size={16}/>打开 MOD 文件夹</button>}</div>}
       <div className="content-footer"><span><span className="monitor-dot"/>{data.monitoring || '监控准备中'}</span><span>文件状态以磁盘核对结果为准</span></div>
       </div></>}
@@ -344,7 +428,7 @@ export default function App() {
     {editor && <GameEditor value={editor === 'new' ? undefined : editor} defaultStrategy={data.settings.defaultStrategy} busy={busy} registerCloseGuard={registerCloseGuard} onClose={closeEditor} onSave={value=>mutate('saveGame',{game:value},'游戏配置已保存')} onDelete={editor !== 'new' ? () => { setConfirmDelete(editor); setEditor(null); } : undefined} onError={setError}/>}
     {detail && <ModDetail key={detail.id} registerCloseGuard={registerCloseGuard} mod={detail} mods={mods} busy={busy||windowClosing} toggling={togglingIds.includes(detail.id)} onClose={closeDetail} onToggle={() => void toggle([detail.id], detail.state !== 'enabled')} onUnify={enabled => void toggle([detail.id], enabled)} onImage={(path, originalPath) => mutate('editMod', { id: detail.id, imagePath: path, originalImagePath: originalPath ?? null }, path ? 'MOD 封面已更新' : 'MOD 封面已移除')} onError={setError} onRename={(memberId,name) => mutate('renameMember', {id:detail.id,memberId,name}, '真实名称已修改')} onDelete={() => { setDeleteMod(detail); setDetailId(null); }} onSave={(description, managed) => mutate('editMod', { id: detail.id, description, managed }, undefined)} onAcceptReplacement={() => mutate('acceptReplacement', { id: detail.id, confirmed: true }, '当前文件已重新关联，名称和备注保留')} onMembers={ids => mutate('setMembers', { id: detail.id, memberIds: ids }, '成员已更新')} onAdd={async ids => {const snapshot=await request('snapshot');const source=snapshot.mods.find(m=>m.id===detail.id);return mutate('group', { ids: [detail.id, ...ids], name: source?.name || detail.name, description: source?.description ?? detail.description }, '已加入分组');}} onUngroup={async () => { if (await mutate('ungroup', { id: detail.id }, '分组已解散，文件未被修改')) setDetailId(null); }}/>}
     {grouping && <GroupEditor busy={busy} count={selected.length} onClose={closeGroup} onSave={async (name, description) => { if (await mutate('group', { ids: selected, name, description }, '逻辑 MOD 分组已创建')) { setGrouping(false); setSelected([]); } }}/>}
-    {deleteMod && <DeleteModDialog mod={deleteMod} busy={busy} onClose={closeModDelete} onConfirm={async recordOnly => { if (await mutate(recordOnly ? 'forgetMod' : 'deleteMod', { id:deleteMod.id, confirmed:true, expectedMembers:deleteMod.members.map(f=>({id:f.id,currentPath:f.currentPath,exists:f.exists})) }, recordOnly ? '管理记录已移除' : undefined)) { if (!recordOnly) { const snap=await request('snapshot'); setData(snap); setUndoId(snap.recentDeletions?.find(r => r.name === modName(deleteMod))?.id || snap.recentDeletions?.[0]?.id || null); } setDeleteMod(null); } }}/>}
+    {deleteMod && <DeleteModDialog mod={deleteMod} busy={busy} onClose={closeModDelete} onConfirm={async recordOnly => { if (await mutate(recordOnly ? 'forgetMod' : 'deleteMod', { id:deleteMod.id, confirmed:true, expectedMembers:deleteMod.members.map(f=>({id:f.id,currentPath:f.currentPath,exists:f.exists})) }, recordOnly ? '管理记录已移除' : undefined)) { if (!recordOnly) { const snap=await request('snapshot'); acceptSnapshot(snap); setUndoId(snap.recentDeletions?.find(r => r.name === modName(deleteMod))?.id || snap.recentDeletions?.[0]?.id || null); } setDeleteMod(null); } }}/>}
     {confirmDelete && <Modal title="删除游戏配置？" onClose={closeDelete}><p className="dialog-copy">将移除「{confirmDelete.name}」的管理器配置、分组与备注。实际游戏和 MOD 文件会完整保留，包括当前禁用的文件；建议先开启需要恢复的 MOD。</p><div className="dialog-actions"><button className="secondary" onClick={closeDelete}>取消</button><button className="danger" disabled={busy} onClick={async () => { if (await mutate('deleteGame', { id: confirmDelete.id }, '游戏配置已删除，实际文件保留')) setConfirmDelete(null); }}>删除配置</button></div></Modal>}
   </div>;
 }
@@ -358,7 +442,7 @@ function SettingsPage({ data, busy, onRestore, onResolveImport, onRecycleBin, on
     <section className="settings-card full"><div className="card-heading"><FolderOpen size={23}/><div><h2>数据存储位置</h2><p>配置、SQLite 数据库与本地图片保存在此处。</p></div></div><button className="data-path" disabled={!desktop || busy} onClick={onFolder} title={displayPath(data.dataDir)}><span>{displayPath(data.dataDir) || '桌面程序中可查看数据目录'}</span><span><FolderOpen size={17}/>打开文件夹</span></button></section>
     {!!data.pendingImports?.length && <section className="settings-card full"><div className="card-heading"><AlertCircle size={23}/><div><h2>未完成的导入</h2><p>核对中断的复制；原始文件保持原样。</p></div></div><div className="recent-deletions">{data.pendingImports.map(item=><div key={item.id}><span><strong>{basename(item.source)}</strong><small>{item.targetExists?'目标已有文件，请核对是否完整':'尚未确认导入完成'}</small></span><button className="secondary" disabled={busy} onClick={()=>setResolution(item)}>核对处理</button></div>)}</div></section>}
     {!!data.recentDeletions?.length && <section className="settings-card full"><div className="card-heading"><Trash2 size={23}/><div><h2>最近删除</h2><p>恢复原文件、备注、封面与分组；同名冲突时不会覆盖。</p></div></div><div className="recent-deletions">{data.recentDeletions.map(item => <div key={item.id}><span><strong>{item.name}</strong><small>{new Date(item.at.replace(" ","T")+"Z").toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})} · {item.status === 'restoring' ? '恢复未完成，可重试' : '回收站记录'}</small></span><button className="secondary" disabled={busy} onClick={() => onRestore(item.id)}>恢复</button></div>)}</div><button className="text-button" onClick={onRecycleBin}>打开 Windows 回收站</button></section>}
-    <section className="settings-card full about-card"><div className="card-heading"><Info size={23}/><h2>关于</h2></div><div className="about-line"><span className="brand-mark"><img src={appIconUrl} alt=""/></span><span><strong>MOD Manager 1.0</strong><small>让 MOD 的管理和切换更简单。</small></span><span className="about-local"><ShieldCheck size={16}/>完全本地 · 无需登录</span></div></section>
+    <section className="settings-card full about-card"><div className="card-heading"><Info size={23}/><h2>关于</h2></div><div className="about-line"><span className="brand-mark"><img src={appIconUrl} alt=""/></span><span><strong>MOD Manager {appVersion}</strong><small>让 MOD 的管理和切换更简单。</small></span><span className="about-local"><ShieldCheck size={16}/>完全本地 · 无需登录</span></div></section>
   </div></div>{resolution&&<Modal title="处理未完成的导入" onClose={()=>setResolution(null)}><p className="dialog-copy">仅处理复制记录与管理器创建的暂存副本，不修改来源文件和目标目录中的文件。</p><div className="import-review-paths"><label>来源<span>{displayPath(resolution.source)}</span></label><label>目标<span>{displayPath(resolution.target)}</span><small>{resolution.targetExists?'目标已有文件，请先核对':'目标文件不存在'}</small></label><label>暂存<span>{displayPath(resolution.stage)}</span><small>{resolution.stageExists?'暂存副本仍在磁盘上':'暂存副本不存在'}</small></label></div>{!resolution.cleanupAvailable&&resolution.stageExists&&<p className="dialog-copy">此记录缺少可信清单，不能自动清理。可保留副本并结束记录。</p>}<div className="dialog-actions"><button className="secondary" data-dismiss>取消</button><button className="secondary" disabled={busy} onClick={async()=>{if(await onResolveImport(resolution.id,false))setResolution(null);}}>保留副本并结束</button>{resolution.cleanupAvailable&&<button className="primary" disabled={busy} onClick={async()=>{if(await onResolveImport(resolution.id,true))setResolution(null);}}>清理暂存并结束</button>}</div></Modal>}</section>;
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "mod-manager"
-version = "1.0.0"
+version = "2.0.0"
 description = "A local, safe Windows game mod manager"
 edition = "2021"
 

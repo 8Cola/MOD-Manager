@@ -26,6 +26,6 @@
 
 `release/` 是软件成品和源码压缩包，仍保留在根目录，但已被 Git 忽略。可以将 EXE 单独上传到发布页面；不必提交到源码仓库。
 
-最省事的开源源码交付文件是 `release/MOD Manager-1.0.0-source.zip`，已排除本机开发环境。若手动上传整个目录，请排除 `_local` 和 `release`；Git 的忽略规则不会替普通文件上传工具自动排除文件。
+最省事的开源源码交付文件是 `release/MOD Manager-2.0.0-source.zip`，已排除本机开发环境。若手动上传整个目录，请排除 `_local` 和 `release`；Git 的忽略规则不会替普通文件上传工具自动排除文件。
 
 继续本机开发：`scripts/restore-local-dependencies.ps1` 可将缓存依赖放回 `node_modules`；也可重新运行 `npm ci`。本机辅助构建脚本已使用新的工具链及 Rust 缓存位置。正常的干净源码 checkout 不包含 `_local`，使用开发者自己的标准环境即可。

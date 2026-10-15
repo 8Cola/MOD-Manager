@@ -159,6 +159,7 @@ pub fn start(
         let mut last_check = Instant::now() - Duration::from_secs(10);
         let mut last_maintenance = Instant::now();
         let mut failures = MonitorFailures::default();
+        let mut fallback = true;
         loop {
             thread::sleep(Duration::from_millis(500));
             for event in rx.try_iter() {
@@ -183,7 +184,7 @@ pub fn start(
                 }
             }
             if last_check.elapsed() >= Duration::from_secs(3) {
-                let snapshot = service.lock().ok().map(|s| s.monitor_configuration());
+                let snapshot = service.try_lock().ok().map(|s| s.monitor_configuration());
                 if let Some(snapshot) = snapshot {
                     let next = roots(&snapshot);
                     if next != desired {
@@ -251,16 +252,26 @@ pub fn start(
                             failures.recovery_registered = true;
                         }
                     }
-                    let mut current = BTreeMap::new();
-                    let mut budget = 100_000;
-                    for path in &desired {
-                        fingerprint(path, &mut current, &mut budget);
-                    }
-                    if current != previous {
-                        dirty_since = Some(Instant::now());
-                        previous = current;
-                    }
                     let missing = missing_directories(&snapshot);
+                    fallback = watcher.is_none()
+                        || !registration_errors.is_empty()
+                        || !failures.watcher.is_empty()
+                        || !missing.is_empty();
+                    let mut budget = 100_000;
+                    // Healthy native events are the primary signal. Only the
+                    // degraded path needs a recursive fingerprint every 3 s.
+                    if fallback {
+                        let mut current = BTreeMap::new();
+                        for path in &desired {
+                            fingerprint(path, &mut current, &mut budget);
+                        }
+                        if current != previous {
+                            dirty_since = Some(Instant::now());
+                            previous = current;
+                        }
+                    } else {
+                        previous.clear();
+                    }
                     let status_changed = if let Ok(mut status) = status.lock() {
                         let before = (status.label.clone(), status.warnings.clone());
                         status.label = if watcher.is_some()
@@ -296,20 +307,24 @@ pub fn start(
             // A quiet interval lets copies settle, and a periodic full scan repairs lost events.
             let quiet =
                 dirty_since.is_some_and(|since| since.elapsed() >= Duration::from_millis(1800));
-            if quiet || (dirty_since.is_none() && last_scan.elapsed() >= Duration::from_secs(30)) {
-                if let Ok(mut service) = service.lock() {
+            if quiet
+                || (!desired.is_empty()
+                    && dirty_since.is_none()
+                    && last_scan.elapsed() >= Duration::from_secs(if fallback { 15 } else { 60 }))
+            {
+                if let Ok(mut service) = service.try_lock() {
                     if let Err(error) = service.request(json!({"action":"scan"})) {
                         failures.scan = vec![format!("自动扫描未完成：{error}")];
                     } else {
                         failures.scan.clear();
                         let _ = app.emit("library-changed", ());
                     }
+                    dirty_since = None;
+                    last_scan = Instant::now();
                 }
-                dirty_since = None;
-                last_scan = Instant::now();
             }
             if last_maintenance.elapsed() >= Duration::from_secs(60 * 60) {
-                if let Ok(mut service) = service.lock() {
+                if let Ok(mut service) = service.try_lock() {
                     match service.request(json!({"action":"maintenance"})) {
                         Ok(_) => failures.maintenance.clear(),
                         Err(error) => {
